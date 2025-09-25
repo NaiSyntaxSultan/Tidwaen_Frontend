@@ -2,35 +2,71 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FiClock } from "react-icons/fi";
 import { FaTicketAlt, FaPercent } from "react-icons/fa";
-import api from "../api/axios"; // ถ้าไม่มี ใช้ axios ปกติแล้วปรับให้ชี้ BASE_URL
+import api from "../api/axios";
 
 /* ---------- helpers ---------- */
-const TICKET_PRICE = 200; // ถ้าไม่มีราคาใน DB ให้ตั้งค่าคงที่ไว้ก่อน
+// ใช้เป็น fallback เมื่อไม่มีราคาจริงใน booking
+const TICKET_PRICE = 200;
 
 const pad2 = (n) => String(n).padStart(2, "0");
-const toYMD = (d) => {
-  const dt = new Date(d);
-  return `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+
+// ปลอดภัยกับทั้ง Date, ISO string, และ 'YYYY-MM-DD'
+const toYMDSafe = (input) => {
+  if (!input) return "";
+  if (typeof input === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(input)) return input;
+    const d = new Date(input);
+    if (!isNaN(d)) {
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+    return "";
+  }
+  const d = input instanceof Date ? input : new Date(input);
+  if (isNaN(d)) return "";
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-const todayYMD = () => toYMD(new Date());
+const todayYMD = () => toYMDSafe(new Date());
 
 function getToken() {
-  // พยายามอ่าน token จากหลายแหล่งที่คุณใช้
   const rawAuth = localStorage.getItem("auth");
   if (rawAuth) {
     try {
       const a = JSON.parse(rawAuth);
       if (a?.token) return a.token;
-    } catch { }
+    } catch {}
   }
   return localStorage.getItem("token") || "";
 }
 
-/* ---------- Mini Chart Component (เดิม) ---------- */
+// ดึงวันที่ของ booking เพื่อนำไป group รายวัน
+const getBookingDateYMD = (b) =>
+  toYMDSafe(b?.show_date || b?.date || b?.created_at || b?.paid_at);
+
+// คำนวณ “ยอดเงิน” ของ booking 1 รายการแบบยืดหยุ่น
+const getBookingAmount = (b) => {
+  // ฟิลด์จำนวนเงินที่มักพบในระบบต่าง ๆ
+  const candidates = [
+    b?.total_price,
+    b?.total,
+    b?.amount,
+    b?.grand_total,
+    b?.price_total,
+  ].map((v) => Number(v));
+
+  const firstValid = candidates.find((n) => !Number.isNaN(n) && Number.isFinite(n));
+  if (typeof firstValid === "number") return firstValid;
+
+  // ถ้าไม่มี total ชัดเจน → ลอง seats * price_per_seat (หรือ price) หรือสุดท้าย fallback TICKET_PRICE
+  const seats = Number(b?.seats) || 0;
+  const priceEach = Number(b?.price_per_seat ?? b?.price) || TICKET_PRICE;
+  return seats * priceEach;
+};
+
+/* ---------- Mini Chart Component (มี tooltip ชื่อเส้น) ---------- */
 function ChartLite({ yMax = 1000, width = 600, height = 260, data }) {
-  const seriesPurple = data?.ticketsSold || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const seriesBlue = data?.ticketsAvailable || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  const seriesGreen = data?.totalSale || [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  const seriesSold = data?.ticketsSold || Array(10).fill(0);
+  const seriesAvail = data?.ticketsAvailable || Array(10).fill(0);
+  const seriesSale = data?.totalSale || Array(10).fill(0);
 
   const chart = { left: 50, right: 560, top: 20, bottom: 220 };
   const xTicks = useMemo(() => Array.from({ length: 10 }, (_, i) => i), []);
@@ -44,8 +80,7 @@ function ChartLite({ yMax = 1000, width = 600, height = 260, data }) {
   const scaleY = (v) =>
     chart.bottom - (v / yMax) * (chart.bottom - chart.top);
 
-  const toPolyline = (arr) =>
-    arr.map((v, i) => `${scaleX(i)},${scaleY(v)}`).join(" ");
+  const toPolyline = (arr) => arr.map((v, i) => `${scaleX(i)},${scaleY(v)}`).join(" ");
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} className="block">
@@ -73,21 +108,52 @@ function ChartLite({ yMax = 1000, width = 600, height = 260, data }) {
         ))}
       </g>
 
-      {/* lines */}
-      <polyline points={toPolyline(seriesPurple)} fill="none" stroke="#A855F7" strokeWidth="3" />
-      <polyline points={toPolyline(seriesBlue)} fill="none" stroke="#60A5FA" strokeWidth="3" />
-      <polyline points={toPolyline(seriesGreen)} fill="none" stroke="#34D399" strokeWidth="3" />
+      {/* เส้น + title บอกชื่อซีรีส์ */}
+      <g>
+        <polyline points={toPolyline(seriesSold)} fill="none" stroke="#A855F7" strokeWidth="3">
+          <title>Tickets Sold</title>
+        </polyline>
+        <polyline points={toPolyline(seriesAvail)} fill="none" stroke="#60A5FA" strokeWidth="3">
+          <title>Tickets Available</title>
+        </polyline>
+        <polyline points={toPolyline(seriesSale)} fill="none" stroke="#34D399" strokeWidth="3">
+          <title>Total Sale (฿)</title>
+        </polyline>
 
-      {/* dots */}
-      {seriesPurple.map((v, i) => (
-        <circle key={`p-${i}`} cx={scaleX(i)} cy={scaleY(v)} r="3" fill="#A855F7" />
-      ))}
-      {seriesBlue.map((v, i) => (
-        <circle key={`b-${i}`} cx={scaleX(i)} cy={scaleY(v)} r="3" fill="#60A5FA" />
-      ))}
-      {seriesGreen.map((v, i) => (
-        <circle key={`g-${i}`} cx={scaleX(i)} cy={scaleY(v)} r="3" fill="#34D399" />
-      ))}
+        {/* dots + title ทีละจุด */}
+        {seriesSold.map((v, i) => (
+          <circle key={`p-${i}`} cx={scaleX(i)} cy={scaleY(v)} r="3" fill="#A855F7">
+            <title>{`Tickets Sold: ${v}`}</title>
+          </circle>
+        ))}
+        {seriesAvail.map((v, i) => (
+          <circle key={`b-${i}`} cx={scaleX(i)} cy={scaleY(v)} r="3" fill="#60A5FA">
+            <title>{`Tickets Available: ${v}`}</title>
+          </circle>
+        ))}
+        {seriesSale.map((v, i) => (
+          <circle key={`g-${i}`} cx={scaleX(i)} cy={scaleY(v)} r="3" fill="#34D399">
+            <title>{`Total Sale: ฿${v}`}</title>
+          </circle>
+        ))}
+      </g>
+
+      {/* legend แบบเรียบง่าย */}
+      <g fontSize="11" fill="#e5e7eb">
+        <rect x="390" y="12" width="190" height="40" rx="8" ry="8" fill="#00000055" />
+        <g transform="translate(400, 26)">
+          <rect width="10" height="3" fill="#A855F7" y="-2" />
+          <text x="18" y="0" dominantBaseline="middle">Tickets Sold</text>
+        </g>
+        <g transform="translate(400, 38)">
+          <rect width="10" height="3" fill="#60A5FA" y="-2" />
+          <text x="18" y="0" dominantBaseline="middle">Tickets Available</text>
+        </g>
+        <g transform="translate(400, 50)">
+          <rect width="10" height="3" fill="#34D399" y="-2" />
+          <text x="18" y="0" dominantBaseline="middle">Total Sale (฿)</text>
+        </g>
+      </g>
     </svg>
   );
 }
@@ -124,7 +190,6 @@ export default function AdminDashboard() {
       statTotalSale,
     ];
     const max = Math.max(1000, ...all);
-    // ปัดขึ้นให้ดูสวย ๆ
     const step = 100;
     return Math.ceil(max / step) * step;
   }, [chartData, statTicketsSold, statTicketsAvail, statTotalSale]);
@@ -138,17 +203,16 @@ export default function AdminDashboard() {
         const token = getToken();
         if (!token) throw new Error("No token found. Please login.");
 
-        // ตั้ง header authtoken ให้ instance (ถ้ายังไม่ได้ตั้ง)
         if (api?.defaults?.headers) {
           api.defaults.headers.authtoken = token;
         }
 
         const today = todayYMD();
 
-        // 1) ดึง showtimes ของ "วันนี้" (สำหรับสถิติ + ตาราง)
+        // 1) ดึงข้อมูล showtime (วันนี้) + booking (confirmed ทั้งหมด)
         const [stRes, bkRes] = await Promise.all([
-          api.get("/showtime", { params: { date: today } }),             // GET /api/showtime?date=YYYY-MM-DD
-          api.get("/booking", { params: { status: "confirmed" } }),      // GET /api/booking?status=confirmed
+          api.get("/showtime", { params: { date: today } }),
+          api.get("/booking", { params: { status: "confirmed" } }),
         ]);
 
         const todayST = stRes?.data?.showtimes || [];
@@ -161,34 +225,38 @@ export default function AdminDashboard() {
         const availToday = todayST.reduce((sum, r) => sum + (Number(r.available_seats) || 0), 0);
         setStatTicketsAvail(availToday);
 
-        // 2) คำนวณ Tickets Sold วันนี้ + Total Sale วันนี้
         const confirmedBookings = bkRes?.data?.bookings || [];
+
+        // 2) Tickets Sold วันนี้ + Total Sale วันนี้ (จากยอดจริง)
         const soldToday = confirmedBookings
-          .filter((b) => b?.show_date && toYMD(b.show_date) === today)
+          .filter((b) => getBookingDateYMD(b) === today)
           .reduce((sum, b) => sum + (Number(b.seats) || 0), 0);
 
-        setStatTicketsSold(soldToday);
-        setStatTotalSale(soldToday * TICKET_PRICE);
+        const totalSaleToday = confirmedBookings
+          .filter((b) => getBookingDateYMD(b) === today)
+          .reduce((sum, b) => sum + getBookingAmount(b), 0);
 
-        // 3) เตรียมข้อมูลกราฟย้อนหลัง 10 วัน
-        // - ticketsSold[i] : ยอดที่ขายได้ (confirmed) ของวันนั้น
-        // - ticketsAvailable[i] : ที่นั่งรวมที่เหลือจาก showtimes ของวันนั้น (จะยิง /showtime?date=<d> เป็นรายวัน)
-        // - totalSale[i] : ticketsSold[i] * TICKET_PRICE
+        setStatTicketsSold(soldToday);
+        setStatTotalSale(totalSaleToday);
+
+        // 3) กราฟย้อนหลัง 10 วัน
         const days = Array.from({ length: 10 }, (_, i) => {
           const dt = new Date();
           dt.setDate(dt.getDate() - (9 - i)); // จากเก่ามาสด
-          return toYMD(dt);
+          return toYMDSafe(dt);
         });
 
-        // group bookings (confirmed) by show_date
+        // group bookings (confirmed) by date → ยอดที่นั่ง/ยอดเงิน
         const mapSoldByDate = {};
+        const mapMoneyByDate = {};
         for (const b of confirmedBookings) {
-          const d = b?.show_date ? toYMD(b.show_date) : null;
+          const d = getBookingDateYMD(b);
           if (!d) continue;
           mapSoldByDate[d] = (mapSoldByDate[d] || 0) + (Number(b.seats) || 0);
+          mapMoneyByDate[d] = (mapMoneyByDate[d] || 0) + getBookingAmount(b);
         }
 
-        // ดึง showtimes ของแต่ละวันที่จะขึ้นกราฟ (10 calls แบบขนาน)
+        // showtimes ของแต่ละวัน (10 calls ขนาน)
         const showtimeRequests = days.map((d) =>
           api.get("/showtime", { params: { date: d } }).catch(() => ({ data: { showtimes: [] } }))
         );
@@ -203,10 +271,11 @@ export default function AdminDashboard() {
           const stRows = resp?.data?.showtimes || [];
           const avail = stRows.reduce((s, r) => s + (Number(r.available_seats) || 0), 0);
           const sold = mapSoldByDate[dateStr] || 0;
+          const money = mapMoneyByDate[dateStr] || 0;
 
           ticketsSoldSeries.push(sold);
           ticketsAvailSeries.push(avail);
-          totalSaleSeries.push(sold * TICKET_PRICE);
+          totalSaleSeries.push(money);
         });
 
         setChartData({
@@ -280,7 +349,6 @@ export default function AdminDashboard() {
         </h1>
       </div>
 
-
       {err && (
         <div className="mb-4 rounded-lg border border-red-500/40 bg-red-900/30 px-4 py-3 text-sm text-red-200">
           {err}
@@ -326,7 +394,7 @@ export default function AdminDashboard() {
               <div className="pt-10 text-center">
                 <p className="text-[25px] leading-snug font-battambang mb-2">{item.label}</p>
                 <p className="text-[60px] md:text-[60px] font-bold tracking-tight">
-                  {loading ? "…" : item.value}
+                  {loading ? "…" : item.label === "Total Sale" ? `฿${item.value}` : item.value}
                 </p>
               </div>
 

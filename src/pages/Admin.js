@@ -6,14 +6,14 @@ import { FaCog, FaFilm, FaTachometerAlt } from "react-icons/fa";
 export default function Admin() {
   const cards = [
     {
-      title: "Admin Management",
+      title: "Management",
       desc: "จัดการภาพยนตร์/รอบฉาย/ที่นั่ง และงานหลังบ้าน",
       to: "/adminmanagement",
       icon: <FaCog className="text-3xl" />,
       accent: "from-[#0E2AAE] to-[#1a1a2e]",
     },
     {
-      title: "Movie Details",
+      title: "Details",
       desc: "ดู/แก้ไขรายละเอียดหนังในระบบ",
       to: "/moviedetails",
       icon: <FaFilm className="text-3xl" />,

@@ -9,7 +9,7 @@ const MOVIE_DEFAULT = {
   title: "Movie",
   date: "—",
   time: "—",
-  location: "SF Cinema MBK Center",
+  location: "TIDWAEN Cinema MBK Center",
   theater: "",
   poster: "/poster.jpg",
 };

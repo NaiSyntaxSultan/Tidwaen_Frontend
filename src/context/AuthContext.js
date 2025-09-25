@@ -1,15 +1,10 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState } from "react";
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  // โหลดสถานะเริ่มต้นจาก localStorage
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    setIsLoggedIn(!!token);
-  }, []);
+  // อ่าน token จาก localStorage ตั้งแต่ตอนสร้าง state (ไม่รอ useEffect)
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem("token"));
 
   // เรียกเมื่อ login สำเร็จ (รับ token จริงจาก API)
   const login = (token) => {

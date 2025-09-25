@@ -3,5 +3,5 @@ import { useAuth } from "../context/AuthContext";
 
 export default function ProtectedRoute() {
   const { isLoggedIn } = useAuth();
-  return isLoggedIn ? <Outlet /> : <Navigate to="/" replace />;
+  return isLoggedIn ? <Outlet /> : <Navigate to="/login" replace />;
 }

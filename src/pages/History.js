@@ -85,7 +85,7 @@ export default function History() {
                 const st = mapStatus(b.status);
                 return (
                   <tr key={i} className="hover:bg-white/10">
-                    <td className="border border-white px-4 py-2">{b.booking_id}</td>
+                    <td className="border border-white px-4 py-2">{i+1}</td>
                     <td className="border border-white px-4 py-2 flex items-center gap-3 justify-start">
                       <img
                         src={b.poster || "/poster.jpg"}

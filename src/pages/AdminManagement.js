@@ -142,6 +142,14 @@ const toHM = (minutes) => {
   return `${h}h ${mm}m`;
 };
 
+/* เติมโปรโตคอลให้ลิงก์ (รองรับ user วาง youtu.be/... โดยไม่ใส่ https://) */
+const addProtocol = (str = "") => {
+  const s = String(str).trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s.replace(/^\/+/, "")}`;
+};
+
 export default function AdminManagement() {
   const navigate = useNavigate();
 
@@ -176,11 +184,12 @@ export default function AdminManagement() {
     date: null, // Date object
     posterURL: "",
     theater: "",
+    trailer_url: "", // ✅ เพิ่มฟิลด์ trailer_url
   });
 
   const isValidUrl = (str) => {
     try {
-      const u = new URL(str);
+      const u = new URL(addProtocol(str));
       return ["http:", "https:"].includes(u.protocol);
     } catch {
       return false;
@@ -202,8 +211,14 @@ export default function AdminManagement() {
       needPosterOk = !!fd.posterURL.trim() && isValidUrl(fd.posterURL.trim());
     }
 
+    // trailer_url เป็น "ออปชัน" — ถ้ากรอก ต้องเป็น URL ที่พอดูสมเหตุสมผล
+    let trailerOk = true;
+    if (fd.trailer_url && fd.trailer_url.trim()) {
+      trailerOk = isValidUrl(fd.trailer_url.trim());
+    }
+
     return {
-      ok: needTitle && needGenre && durOk && needDate && needPosterOk,
+      ok: needTitle && needGenre && durOk && needDate && needPosterOk && trailerOk,
     };
   };
 
@@ -224,6 +239,7 @@ export default function AdminManagement() {
       date: null,
       posterURL: "",
       theater: "",
+      trailer_url: "",
     });
   };
 
@@ -258,10 +274,15 @@ export default function AdminManagement() {
         duration: durationMinutes,
         poster:
           showUrlInput && formData.posterURL.trim()
-            ? formData.posterURL.trim()
+            ? addProtocol(formData.posterURL.trim())
             : preview,
         review: null,
         release_date: dateISO || null,
+        // ✅ ส่ง trailer_url (ถ้าไม่ได้กรอกจะเป็น null)
+        trailer_url:
+          formData.trailer_url && formData.trailer_url.trim()
+            ? addProtocol(formData.trailer_url.trim())
+            : null,
       };
 
       const movieRes = await api.post("/movie", payloadMovie);
@@ -328,7 +349,7 @@ export default function AdminManagement() {
                   onChange={(e) => {
                     const url = e.target.value;
                     setFormData((p) => ({ ...p, posterURL: url }));
-                    setPreview(url.trim() ? url.trim() : DEFAULT_POSTER);
+                    setPreview(url.trim() ? addProtocol(url.trim()) : DEFAULT_POSTER);
                   }}
                   className="w-64 px-4 py-2 rounded-lg bg-[#1b0033] text-white font-battambang outline-none ring-1 ring-white/10"
                 />
@@ -368,7 +389,9 @@ export default function AdminManagement() {
                 />
               </div>
 
-              {/* Duration + Theater (fixed row height; won't jump) */}
+              
+
+              {/* Duration + Theater */}
               <div className="w-96 grid grid-cols-2 gap-3 items-start">
                 {/* Duration */}
                 <div className="flex flex-col">
@@ -423,6 +446,23 @@ export default function AdminManagement() {
                 </div>
               </div>
 
+              {/* ✅ Trailer URL */}
+              <div>
+                <label className="block mb-2">Trailer URL (YouTube หรือ .mp4)</label>
+                <input
+                  name="trailer_url"
+                  placeholder="เช่น https://youtu.be/TP4QAgUcnDA"
+                  value={formData.trailer_url}
+                  onChange={handleChange}
+                  className="w-96 px-4 py-2 rounded-lg bg-[#1b0033] text-white outline-none ring-1 ring-white/10"
+                  autoComplete="off"
+                />
+                <p className="text-xs text-white/60 mt-1">
+                  รองรับลิงก์แบบ <code>youtu.be</code>, <code>youtube.com/watch?v=</code>,{" "}
+                  <code>/shorts/</code>, <code>/embed/</code> หรือไฟล์ <code>.mp4</code>
+                </p>
+              </div>
+
               <div className="flex gap-6">
                 <button
                   type="submit"
@@ -451,7 +491,7 @@ export default function AdminManagement() {
 
             {/* tips */}
             <div className="mt-4 text-sm text-white/60">
-              * ระบบจะเปิดรอบฉายวันที่ที่เลือก เวลา {DEFAULT_SHOW_TIME}. หากต้องการเลือกเวลาเอง ค่อยเพิ่มฟิลด์เวลาในภายหลังได้
+              * ระบบจะเปิดรอบฉายวันที่ที่เลือก เวลา 11:00. หากต้องการเลือกเวลาเอง ค่อยเพิ่มฟิลด์เวลาในภายหลังได้
             </div>
           </div>
         </div>

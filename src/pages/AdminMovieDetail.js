@@ -27,7 +27,6 @@ function DatePickerLite({ value, onChange }) {
     year: "numeric",
   });
 
-  // calendar grid
   const startOfMonth = new Date(view.getFullYear(), view.getMonth(), 1);
   const endOfMonth = new Date(view.getFullYear(), view.getMonth() + 1, 0);
   const startWeekday = startOfMonth.getDay();
@@ -189,7 +188,6 @@ const toOneDecimalOrNull = (v) => {
   if (Number.isNaN(n)) return null;
   return Math.max(0, Math.min(9.9, Math.round(n * 10) / 10));
 };
-// วันที่แบบปลอดภัย (กัน "0000-00-00", "", null)
 const safeParseDate = (s) => {
   if (!s) return null;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(s));
@@ -199,6 +197,13 @@ const safeParseDate = (s) => {
   }
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? null : d;
+};
+/* เติมโปรโตคอลให้ลิงก์ */
+const addProtocol = (str = "") => {
+  const s = String(str).trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  return `https://${s.replace(/^\/+/, "")}`;
 };
 
 /* ===================== AdminMovieDetail ===================== */
@@ -211,7 +216,7 @@ export default function AdminMovieDetail() {
   const [loadError, setLoadError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null); // {showtime_id,movie_id,title,alsoDeleteMovie}
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
   const [showEditModal, setShowEditModal] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -227,13 +232,10 @@ export default function AdminMovieDetail() {
     seats: "",
     posterURL: DEFAULT_POSTER,
     review: "",
+    trailer_url: "",     // ✅ ช่องแก้ไข (เริ่มต้นเว้นว่าง)
+    clearTrailer: false, // ✅ ติ๊กเพื่อลบค่าใน DB
   });
 
-  const fmtDate = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
   const fmtTime = (t) => (t ? String(t).slice(0, 5) : "");
 
   // ===== Load =====
@@ -241,7 +243,7 @@ export default function AdminMovieDetail() {
     setLoading(true);
     setLoadError("");
     try {
-      const res = await listShowtimes(); // GET /api/showtime
+      const res = await listShowtimes(); // ควรรวม trailer_url มาด้วยถ้า backend มี
       const list = (res.data?.showtimes || []).map((s) => ({
         ...s,
         posterURL: s.poster || DEFAULT_POSTER,
@@ -284,6 +286,8 @@ export default function AdminMovieDetail() {
       seats: String(row.available_seats ?? ""),
       posterURL: row.posterURL || DEFAULT_POSTER,
       review: row.review ?? "",
+      trailer_url: "",        // ✅ เว้นว่างไว้ (จะไม่ส่งถ้าไม่แก้)
+      clearTrailer: false,    // ✅ ค่าเริ่มต้นไม่ลบ
     });
     setShowEditModal(true);
   };
@@ -308,6 +312,7 @@ export default function AdminMovieDetail() {
 
     const timePayload = normalizeTime(editForm.time || "00:00");
 
+    // ✅ สร้าง payload แบบ "มีเงื่อนไข" สำหรับ trailer_url
     const moviePayload = {
       title: editForm.title,
       genre: editForm.genre || null,
@@ -316,6 +321,13 @@ export default function AdminMovieDetail() {
       review: toOneDecimalOrNull(editForm.review),
       release_date: null,
     };
+    if (editForm.clearTrailer) {
+      moviePayload.trailer_url = null; // ลบค่าใน DB
+    } else if (editForm.trailer_url && editForm.trailer_url.trim()) {
+      moviePayload.trailer_url = addProtocol(editForm.trailer_url.trim()); // อัปเดตใหม่
+    }
+    // ถ้าเว้นว่างและไม่ติ๊กลบ ⇒ ไม่ใส่ trailer_url ใน payload เลย → DB คงค่าเดิมไว้
+
     const showtimePayload = {
       theater: editForm.theater || null,
       show_date: ymd(editForm.date),
@@ -351,13 +363,11 @@ export default function AdminMovieDetail() {
       alsoDeleteMovie: false,
     });
   };
-
   const handleDelete = async () => {
     const { showtime_id, movie_id, alsoDeleteMovie } = showDeleteConfirm || {};
     if (!showtime_id) return;
     try {
-      await removeShowtime(showtime_id); // ลบรอบฉายก่อน
-
+      await removeShowtime(showtime_id);
       if (alsoDeleteMovie) {
         const stillHas = rows.some(
           (r) => r.movie_id === movie_id && r.showtime_id !== showtime_id
@@ -372,9 +382,8 @@ export default function AdminMovieDetail() {
             return;
           }
         }
-        await removeMovie(movie_id); // ลบหนัง
+        await removeMovie(movie_id);
       }
-
       setShowDeleteConfirm(null);
       await load();
     } catch (e) {
@@ -650,6 +659,35 @@ export default function AdminMovieDetail() {
                       autoComplete="off"
                     />
                   </div>
+                </div>
+
+                {/* ✅ Trailer URL ย้ายมาอยู่ “ด้านล่างสุด” */}
+                <div className="pt-2">
+                  <label className="block mb-2">Trailer URL (YouTube หรือ .mp4)</label>
+                  <input
+                    name="trailer_url"
+                    placeholder="ปล่อยว่าง = ใช้ค่าเดิม / ใส่ลิงก์ = แทนที่ / ติ๊กด้านล่าง = ลบทิ้ง"
+                    value={editForm.trailer_url}
+                    onChange={(e) =>
+                      setEditForm((p) => ({ ...p, trailer_url: e.target.value }))
+                    }
+                    className="w-full px-4 py-2 rounded-lg bg-[#1b0033] text-white outline-none ring-1 ring-white/10"
+                    autoComplete="off"
+                  />
+                  <label className="mt-2 flex items-center gap-2 text-sm text-white/80 select-none">
+                    <input
+                      type="checkbox"
+                      className="accent-[#8F00D7]"
+                      checked={editForm.clearTrailer}
+                      onChange={(e) =>
+                        setEditForm((p) => ({ ...p, clearTrailer: e.target.checked }))
+                      }
+                    />
+                    <span>Remove trailer URL</span>
+                  </label>
+                  <p className="text-xs text-white/60 mt-1">
+                    ปล่อยว่างจะไม่แก้ไขค่าเดิม • กรอกลิงก์ใหม่เพื่ออัปเดต • ติ๊ก “Remove” เพื่อลบออกจากฐานข้อมูล
+                  </p>
                 </div>
               </div>
             </div>

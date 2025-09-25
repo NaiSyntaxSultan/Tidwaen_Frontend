@@ -34,7 +34,7 @@ export default function BookingConfirm() {
 
   const [poster, setPoster] = useState(state?.movie?.poster || "/poster.jpg");
   const [title, setTitle] = useState(state?.movie?.title || "—");
-  const [reviewStars] = useState("★ ★ ★ ★ ☆");
+  const [reviewStars] = useState("☆ ☆ ☆ ☆ ☆");
 
   const [seatsLabel, setSeatsLabel] = useState(state?.seats || "—");
   const [tickets, setTickets] = useState(state?.seats_count || 0);

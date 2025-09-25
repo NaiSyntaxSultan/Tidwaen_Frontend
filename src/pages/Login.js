@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { login as apiLogin, saveAuth } from "../functions/product";
 import { useAuth } from "../context/AuthContext";
@@ -7,10 +7,17 @@ import { FcGoogle } from "react-icons/fc";
 
 export default function Login() {
   const navigate = useNavigate();
-  const { login: setAuthLogin } = useAuth(); // ✅ ดึง login จาก Context
+  const { login: setAuthLogin, logout } = useAuth(); // ✅ ดึง logout จาก Context
   const [form, setForm] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // ⬇️ เมื่อเข้ามาหน้านี้ให้บังคับ logout ทุกครั้ง
+  useEffect(() => {
+    logout?.(); // context logout
+    localStorage.clear();
+    sessionStorage.clear();
+  }, []);
 
   const handleChange = (e) =>
     setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
@@ -22,9 +29,9 @@ export default function Login() {
     try {
       const res = await apiLogin(form.username, form.password);
       // สมมติรูปแบบ: res.data = { success, token, payload }
-      saveAuth(res.data);                    // เก็บลง localStorage (ของคุณเดิม)
-      setAuthLogin(res.data?.token);        // ✅ แจ้ง Context เพื่อให้ Navbar อัปเดตทันที
-      navigate("/");                        // ไปหน้า Home หรือที่ต้องการ
+      saveAuth(res.data);              // เก็บลง localStorage
+      setAuthLogin(res.data?.token);  // อัปเดต Context
+      navigate("/home");              // ไปหน้า Home
     } catch (err) {
       const msg =
         err?.response?.data?.message ||

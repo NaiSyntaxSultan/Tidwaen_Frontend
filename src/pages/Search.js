@@ -1,75 +1,18 @@
 // src/pages/Search.jsx
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../api/axios";
 
 export default function Search() {
   const [query, setQuery] = useState("");
   const [genre, setGenre] = useState("All");
-  const [time, setTime] = useState("All"); // backend ปัจจุบันยังไม่มี showtime ในตาราง movies
+  const [time, setTime] = useState("All"); // ไม่มีเวลาใน /movie ต้องไปดูจาก /showtime
   const [movies, setMovies] = useState([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
 
-  // โหลดทั้งหมดเมื่อเข้าเพจครั้งแรก
-  useEffect(() => {
-    let mounted = true;
-    const loadAll = async () => {
-      try {
-        setLoading(true);
-        setErr("");
-        const res = await api.get("/movie");
-        if (!mounted) return;
-        setMovies(res.data?.movies || []);
-      } catch (e) {
-        setErr(e?.response?.data?.error || "Load movies failed");
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadAll();
-    return () => (mounted = false);
-  }, []);
-
-  // ค้นหา
-  const handleSearch = async () => {
-    const noFilters = query.trim() === "" && genre === "All";
-    try {
-      setLoading(true);
-      setErr("");
-
-      if (noFilters) {
-        const res = await api.get("/movie");
-        setMovies(res.data?.movies || []);
-        return;
-      }
-
-      const params = {};
-      if (query.trim() !== "") params.title = query.trim();
-      if (genre !== "All") params.genre = genre;
-
-      const res = await api.get("/movie/search", { params });
-      let result = res.data?.movies || [];
-
-      // หมายเหตุ: ถ้าในอนาคต backend ส่ง showtime: string[] มากับหนัง จะกรองเวลาที่นี่ได้เลย
-      if (time !== "All") {
-        result = result.filter(
-          (m) => Array.isArray(m.showtime) && m.showtime.includes(time)
-        );
-      }
-
-      setMovies(result);
-    } catch (e) {
-      setErr(e?.response?.data?.error || "Search failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Enter เพื่อค้นหา
-  const onKeyDown = (e) => {
-    if (e.key === "Enter") handleSearch();
-  };
+  // ป้องกัน response เก่าทับใหม่
+  const reqId = useRef(0);
 
   // เวลาทุก 30 นาที (10:00–23:00)
   const showTimes = useMemo(() => {
@@ -81,6 +24,72 @@ export default function Search() {
     }
     return times;
   }, []);
+
+  // ---- ฟังก์ชันยิงค้นหา (ใช้ทั้งออโต้และตอนกดปุ่ม) ----
+  const fetchSearch = async (q, g, t, currentReq) => {
+    const noFilters = q.trim() === "" && g === "All";
+
+    try {
+      setLoading(true);
+      setErr("");
+
+      // 1) ดึงรายการหนังตามชื่อ/หมวด
+      let result = [];
+      if (noFilters) {
+        const res = await api.get("/movie");
+        result = res.data?.movies || [];
+      } else {
+        const params = {};
+        if (q.trim() !== "") params.title = q.trim();
+        if (g !== "All") params.genre = g;
+
+        const res = await api.get("/movie/search", { params });
+        result = res.data?.movies || [];
+      }
+
+      // 2) ถ้าเลือกเวลา -> ไปดึง /showtime แล้วกรองด้วยเวลา จากนั้นแมตช์ movie_id
+      if (t !== "All") {
+        // ดึงทุก showtime (backend ไม่มีพารามิเตอร์ time ให้กรองที่ฝั่ง client)
+        const stRes = await api.get("/showtime");
+        const showtimes = stRes?.data?.showtimes || [];
+
+        // เก็บ movie_id ของรอบที่มีเวลาเท่ากับ t (เปรียบเทียบ HH:MM)
+        const movieIdsAtTime = new Set(
+          showtimes
+            .filter((s) => (s?.show_time || "").slice(0, 5) === t)
+            .map((s) => s.movie_id)
+        );
+
+        result = result.filter((m) => movieIdsAtTime.has(m.movie_id ?? m.id));
+      }
+
+      // อัปเดตเฉพาะถ้าเป็นคำขอรอบล่าสุด
+      if (currentReq === reqId.current) {
+        setMovies(result);
+      }
+    } catch (e) {
+      if (currentReq === reqId.current) {
+        setErr(e?.response?.data?.error || "Search failed");
+      }
+    } finally {
+      if (currentReq === reqId.current) setLoading(false);
+    }
+  };
+
+  // ✅ ออโต้ค้นหาด้วย debounce เมื่อพิมพ์/เปลี่ยนตัวกรอง
+  useEffect(() => {
+    const current = ++reqId.current;
+    const handle = setTimeout(() => {
+      fetchSearch(query, genre, time, current);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [query, genre, time]);
+
+  // ✅ ปุ่ม Search (ยิงทันที)
+  const handleManualSearch = () => {
+    const current = ++reqId.current;
+    fetchSearch(query, genre, time, current);
+  };
 
   return (
     <div className="text-white font-battambang items-center flex flex-col pb-10">
@@ -98,7 +107,6 @@ export default function Search() {
           placeholder="Movie Name"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          onKeyDown={onKeyDown}
           className="bg-gradient-to-r from-purple-900 to-indigo-900 px-4 py-2 rounded-lg w-72 focus:outline-none text-white"
         />
 
@@ -119,7 +127,7 @@ export default function Search() {
           <option value="Fantasy" className="bg-black text-white">Fantasy</option>
         </select>
 
-        {/* ShowTime (UI พร้อม แต่ยังไม่ผูกกับ backend ตอนนี้) */}
+        {/* ShowTime (ฟิลเตอร์ด้วย /showtime) */}
         <select
           value={time}
           onChange={(e) => setTime(e.target.value)}
@@ -133,8 +141,9 @@ export default function Search() {
           ))}
         </select>
 
+        {/* ปุ่ม Search กลับมาแล้ว */}
         <button
-          onClick={handleSearch}
+          onClick={handleManualSearch}
           className="bg-purple-600 px-6 py-2 rounded-lg hover:bg-purple-700 disabled:opacity-60"
           disabled={loading}
         >

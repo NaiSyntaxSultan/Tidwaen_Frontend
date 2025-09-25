@@ -52,7 +52,7 @@ const Navbar = () => {
             - ถ้า 'ยังไม่ล็อกอิน' = เป็น div เฉย ๆ (ไม่ลิงก์)
             - ถ้า 'ล็อกอินแล้ว'   = ลิงก์ไปหน้า Home ตามเดิม */}
         {isLoggedIn ? (
-          <Link to="/" className="font-saira text-xl text-white flex items-center gap-2">
+          <Link to="/home" className="font-saira text-xl text-white flex items-center gap-2">
             <img src="/logo.png" alt="logo" className="h-8" />
             TIDWAEN CINEMA
           </Link>
@@ -72,7 +72,7 @@ const Navbar = () => {
           {isLoggedIn && (
             <>
               <NavLink
-                to="/"
+                to="/home"
                 end
                 className={({ isActive }) =>
                   `${linkBase} ${isActive ? linkActive : ""}`
@@ -92,24 +92,12 @@ const Navbar = () => {
 
               {isAdmin && (
                 <NavLink
-                  to="/adminmanagement"
-                  end
+                  to="admin"
                   className={({ isActive }) =>
                     `${linkBase} ${isActive ? linkActive : ""}`
                   }
                 >
-                  Management
-                </NavLink>
-              )}
-
-              {isAdmin && (
-                <NavLink
-                  to="/adminmanagement/moviedetails"
-                  className={({ isActive }) =>
-                    `${linkBase} ${isActive ? linkActive : ""}`
-                  }
-                >
-                  MovieDetails
+                  Admin
                 </NavLink>
               )}
             </>
